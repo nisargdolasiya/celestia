@@ -11,7 +11,7 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 # Cache for image data
 image_cache = {}
@@ -220,6 +220,45 @@ async def view_image(ctx, image_id: str):
     )
     embed.set_image(url=image_data['url'])
     embed.set_footer(text=f"Cache time: {image_data['cache']} seconds")
+
+    await ctx.send(embed=embed)
+
+@bot.command(name='help')
+async def help_command(ctx):
+    """Show all available commands"""
+    embed = discord.Embed(
+        title="Celestia Bot Commands",
+        description="Here are all the available commands:",
+        color=discord.Color.blue()
+    )
+
+    # Aurora Information
+    embed.add_field(
+        name="Aurora Commands",
+        value="`!aurora <latitude> <longitude>` - Get aurora information for a location\n"
+              "Example: `!aurora 64.5 -147.5` (Fairbanks, Alaska)",
+        inline=False
+    )
+
+    # Image Commands
+    embed.add_field(
+        name="Image Commands",
+        value="`!cameras` - List all available aurora webcams\n"
+              "`!charts` - List all available charts and graphs\n"
+              "`!satellites` - List all available satellite images\n"
+              "`!view <image_id>` - View a specific image",
+        inline=False
+    )
+
+    # Help Command
+    embed.add_field(
+        name="Help",
+        value="`!help` - Show this help message",
+        inline=False
+    )
+
+    # Add footer with support info
+    embed.set_footer(text="For more help, join our support server or visit our GitHub page")
 
     await ctx.send(embed=embed)
 
