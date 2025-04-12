@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 import requests
 from dotenv import load_dotenv
+import datetime
 
 # Load environment variables
 load_dotenv()
@@ -44,66 +45,79 @@ async def aurora(ctx, lat: float = None, long: float = None):
         return
 
     try:
+        # Get timezone offset in minutes
+        tz_offset = -datetime.datetime.now().astimezone().utcoffset().total_seconds() / 60
+
+        # Prepare request payload
+        payload = {
+            "nowcast:local": {
+                "lat": lat,
+                "long": long,
+            },
+            "format": {
+                "date": {
+                    "tz": int(tz_offset)
+                }
+            }
+        }
+
+        # Make POST request to v2 API
+        response = requests.post(
+            "https://v2.api.auroras.live/nowcast",
+            json=payload
+        )
+        response.raise_for_status()
+        data = response.json()
+
         # Create an embed with the information
         embed = discord.Embed(
-            title="Aurora Information",
+            title="Aurora Nowcast",
             color=discord.Color.blue()
         )
+
+        # Add location information
         embed.add_field(
             name="Location",
             value=f"Latitude: {lat}°\nLongitude: {long}°",
             inline=False
         )
 
-        # Get probability data
-        prob_url = f"https://api.auroras.live/v1/?type=ace&data=probability&lat={lat}&long={long}"
-        prob_response = requests.get(prob_url)
-        prob_response.raise_for_status()
-        prob_data = prob_response.json()
-        
-        if prob_data:
-            embed.add_field(
-                name="Aurora Probability",
-                value=f"Overhead: {prob_data.get('probability', 'N/A')}%\n"
-                      f"Within 1000km: {prob_data.get('highestProbability', 'N/A')}%\n"
-                      f"Best Location: {prob_data.get('bestLocation', 'N/A')}",
-                inline=False
-            )
+        # Add probability information
+        color_meanings = {
+            "green": "No chance",
+            "yellow": "Slight chance",
+            "orange": "Good chance",
+            "red": "Almost certain"
+        }
 
-        # Get Kp data
-        kp_url = "https://api.auroras.live/v1/?type=ace&data=kp"
-        kp_response = requests.get(kp_url)
-        kp_response.raise_for_status()
-        kp_data = kp_response.json()
+        embed.add_field(
+            name="Aurora Probability",
+            value=f"Value: {data.get('value')}%\nStatus: {color_meanings.get(data.get('color', '').lower(), 'Unknown')}",
+            inline=False
+        )
 
-        if kp_data:
-            activity_color = kp_data.get('colour', {})
-            embed.add_field(
-                name="Solar Activity (Kp Index)",
-                value=f"Current: {kp_data.get('kp', 'N/A')} ({activity_color.get('kp', 'N/A')})\n"
-                      f"1hr Forecast: {kp_data.get('kp1hour', 'N/A')} ({activity_color.get('kp1hour', 'N/A')})\n"
-                      f"4hr Forecast: {kp_data.get('kp4hour', 'N/A')} ({activity_color.get('kp4hour', 'N/A')})",
-                inline=False
-            )
-
-        # Get solar wind data
+        # Get solar wind data from v1 API
         wind_url = "https://api.auroras.live/v1/?type=ace&data=all"
         wind_response = requests.get(wind_url)
         wind_response.raise_for_status()
         wind_data = wind_response.json()
 
-        if wind_data:
+        # Only use solar wind parameters from the response
+        if wind_data and all(key in wind_data for key in ['speed', 'density', 'bz']):
             embed.add_field(
                 name="Solar Wind",
-                value=f"Speed: {wind_data.get('speed', 'N/A')} km/s\n"
-                      f"Density: {wind_data.get('density', 'N/A')} p/cm³\n"
-                      f"Bz: {wind_data.get('bz', 'N/A')} nT",
+                value=f"Speed: {wind_data['speed']} km/s\n"
+                      f"Density: {wind_data['density']} p/cm³\n"
+                      f"Bz: {wind_data['bz']} nT",
                 inline=False
             )
 
-        # Add timestamp
-        if 'date' in kp_data:
-            embed.set_footer(text=f"Last updated: {kp_data['date']}")
+        # Add timestamps
+        embed.add_field(
+            name="Timestamps",
+            value=f"Data from: {data.get('date')}\nRequest time: {data.get('request_date')}",
+            inline=False
+        )
 
         await ctx.send(embed=embed)
 
