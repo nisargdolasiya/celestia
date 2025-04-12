@@ -39,14 +39,7 @@ python main.py
 
 [Click here to invite Celestia to your server](https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=2147483648&scope=bot)
 
-## Support
-
-Need help? Join our [support server](YOUR_SUPPORT_SERVER_LINK) or create an issue on GitHub.
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
