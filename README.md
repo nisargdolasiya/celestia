@@ -17,6 +17,7 @@ A Discord bot that provides real-time aurora information, forecasts, and live ca
 - `!charts` - List all available charts and graphs
 - `!satellites` - List all available satellite images
 - `!view <image_id>` - View a specific image
+- `!help` - Show help message/ List all available commands
 
 ## Setup
 
