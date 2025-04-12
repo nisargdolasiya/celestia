@@ -102,7 +102,7 @@ async def aurora(ctx, lat: float = None, long: float = None):
         wind_response.raise_for_status()
         wind_data = wind_response.json()
 
-        # Only use solar wind parameters from the response
+        # wind parameters from the response
         if wind_data and all(key in wind_data for key in ['speed', 'density', 'bz']):
             embed.add_field(
                 name="Solar Wind",
