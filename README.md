@@ -37,7 +37,7 @@ python main.py
 
 ## Invite the Bot
 
-[Click here to invite Celestia to your server](https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=2147483648&scope=bot)
+[Click here to invite Celestia to your server](https://discord.com/api/oauth2/authorize?client_id=1360601374366371842&permissions=2147483648&scope=bot)
 
 ## Contributing
 
