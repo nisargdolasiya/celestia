@@ -1,6 +1,7 @@
 import os
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import requests
 from dotenv import load_dotenv
 import datetime
@@ -18,7 +19,19 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.messages = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+
+# Register the ping command as a slash command
+@bot.tree.command(name="ping", description="Check the bot's latency")
+async def ping(interaction: discord.Interaction):
+    """Respond with the bot's latency"""
+    start_time = time.time()
+    await interaction.response.send_message(f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms")
+    end_time = time.time()
+    response_time = round((end_time - start_time) * 1000)
+    await interaction.edit_original_response(content=f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms\nResponse Time: {response_time} ms")
 
 # Request headers
 HEADERS = {
@@ -38,6 +51,12 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     update_cache_loop.start()
     await update_image_cache()
+    # Sync slash commands globally
+    try:
+        await bot.tree.sync()
+        print("Slash commands synced")
+    except Exception as e:
+        print(f"Error syncing slash commands: {e}")
 
 def is_cache_valid(image_id):
     """Check if the cached image data is still valid"""
@@ -388,7 +407,7 @@ async def help_command(ctx):
     # Help Command
     embed.add_field(
         name="Help",
-        value="`!help` - Show this help message",
+        value="`!help` - Show this help message\n\nSlash Commands:\n`/ping` - Check the bot's latency",
         inline=False
     )
 
