@@ -29,7 +29,7 @@ GUILD_ID = 1360650689771995369
 guild = discord.Object(id=GUILD_ID)
 
 # Register the ping command as a slash command
-@bot.tree.command(name="ping", description="Check the bot's latency", guild=guild)
+@bot.tree.command(name="ping", description="Check the bot's latency")
 async def ping(interaction: discord.Interaction):
     """Respond with the bot's latency"""
     start_time = time.time()
