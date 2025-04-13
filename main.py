@@ -231,8 +231,11 @@ async def aurora(ctx, lat: float = None, long: float = None):
 @bot.command(name='cameras')
 async def list_cameras(ctx):
     """List all available aurora cameras"""
-    # Force fresh update when listing cameras
-    await update_image_cache(force_update=True)
+    # Only update cache if needed
+    if not image_cache.get('images'):
+        await update_image_cache()
+    elif not is_cache_valid('cameras'):
+        await update_image_cache()
     
     if not image_cache.get('images'):
         await ctx.send("Error: Unable to fetch camera list")
