@@ -1,9 +1,15 @@
 import os
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import requests
 from dotenv import load_dotenv
 import datetime
+import time
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger('celestia')
 
 # Load environment variables
 load_dotenv()
@@ -14,24 +20,116 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
+# Request headers
+HEADERS = {
+    'User-Agent': 'CelestiaDiscordBot/1.0',
+    'Accept': 'image/jpeg,image/png,image/*',
+    'Cache-Control': 'no-cache'
+}
+
 # Cache for image data
-image_cache = {}
+image_cache = {
+    'last_update': 0,
+    'images': {}
+}
 
 @bot.event
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
+    update_cache_loop.start()
     await update_image_cache()
 
-async def update_image_cache():
+def is_cache_valid(image_id):
+    """Check if the cached image data is still valid"""
+    if not image_cache.get('images') or image_id not in image_cache['images']:
+        return False
+    
+    image_data = image_cache['images'][image_id]
+    cache_duration = image_data.get('cache', 3600)  # Default to 1 hour if not specified
+    last_update = image_data.get('last_update', 0)
+    return time.time() - last_update < cache_duration
+
+async def update_image_cache(specific_image=None, force_update=False):
     """Update the cache of available images from the API"""
     try:
-        response = requests.get("https://api.auroras.live/v1/?type=images&action=list")
-        response.raise_for_status()
-        data = response.json()
-        global image_cache
-        image_cache = data
-    except Exception as e:
-        print(f"Error updating image cache: {e}")
+        if specific_image:
+            # Always fetch fresh data for specific image requests
+            logger.info(f"Fetching fresh data for image: {specific_image}")
+            response = requests.get(
+                "https://api.auroras.live/v1/?type=images&action=list",
+                headers=HEADERS,
+                allow_redirects=True,
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            if specific_image in data.get('images', {}):
+                image_data = data['images'][specific_image]
+                # Always fetch the latest image
+                image_response = requests.get(
+                    image_data['url'],
+                    headers=HEADERS,
+                    allow_redirects=True,
+                    timeout=10,
+                    params={'t': int(time.time())}  # Add timestamp to bypass cache
+                )
+                image_response.raise_for_status()
+                
+                # Update cache with fresh data
+                image_cache['images'][specific_image] = image_data
+                image_data['last_update'] = time.time()
+                logger.info(f"Successfully updated image {specific_image}")
+        else:
+            # Update all images
+            logger.info("Fetching fresh image list")
+            response = requests.get(
+                "https://api.auroras.live/v1/?type=images&action=list",
+                headers=HEADERS,
+                allow_redirects=True,
+                timeout=10
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Always update with fresh data
+            new_images = data.get('images', {})
+            current_time = time.time()
+            
+            # If forcing update, fetch fresh images for all
+            if force_update:
+                for img_id, img_data in new_images.items():
+                    try:
+                        # Fetch fresh image
+                        image_response = requests.get(
+                            img_data['url'],
+                            headers=HEADERS,
+                            allow_redirects=True,
+                            timeout=10,
+                            params={'t': int(current_time)}  # Add timestamp to bypass cache
+                        )
+                        image_response.raise_for_status()
+                        img_data['last_update'] = current_time
+                    except requests.exceptions.RequestException as e:
+                        logger.error(f"Error updating image {img_id}: {str(e)}")
+            
+            image_cache['images'] = new_images
+            image_cache['last_update'] = current_time
+            logger.info(f"Successfully updated cache with {len(new_images)} images")
+            
+    except requests.exceptions.Timeout:
+        logger.error("Timeout while fetching images from API")
+        if not image_cache.get('images'):
+            image_cache['images'] = {}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error updating image cache: {str(e)}")
+        if not image_cache.get('images'):
+            image_cache['images'] = {}
+
+@tasks.loop(minutes=5)
+async def update_cache_loop():
+    """Periodically update the image cache"""
+    await update_image_cache()
 
 @bot.command(name='aurora')
 async def aurora(ctx, lat: float = None, long: float = None):
@@ -64,7 +162,10 @@ async def aurora(ctx, lat: float = None, long: float = None):
         # Make POST request to v2 API
         response = requests.post(
             "https://v2.api.auroras.live/nowcast",
-            json=payload
+            json=payload,
+            headers=HEADERS,
+            allow_redirects=True,
+            timeout=10
         )
         response.raise_for_status()
         data = response.json()
@@ -98,7 +199,7 @@ async def aurora(ctx, lat: float = None, long: float = None):
 
         # Get solar wind data from v1 API
         wind_url = "https://api.auroras.live/v1/?type=ace&data=all"
-        wind_response = requests.get(wind_url)
+        wind_response = requests.get(wind_url, headers=HEADERS, allow_redirects=True, timeout=10)
         wind_response.raise_for_status()
         wind_data = wind_response.json()
 
@@ -130,20 +231,20 @@ async def aurora(ctx, lat: float = None, long: float = None):
 @bot.command(name='cameras')
 async def list_cameras(ctx):
     """List all available aurora cameras"""
-    if not image_cache:
-        await update_image_cache()
+    # Force fresh update when listing cameras
+    await update_image_cache(force_update=True)
     
-    if not image_cache:
+    if not image_cache.get('images'):
         await ctx.send("Error: Unable to fetch camera list")
         return
 
     embed = discord.Embed(
         title="Available Aurora Cameras",
-        description="Use `!view <camera_id>` to view a specific camera",
+        description="List of available aurora cameras",
         color=discord.Color.blue()
     )
 
-    cameras = {id: img for id, img in image_cache.get('images', {}).items() 
+    cameras = {id: img for id, img in image_cache['images'].items() 
               if img.get('category') == 'cam'}
 
     for cam_id, cam_data in cameras.items():
@@ -158,10 +259,10 @@ async def list_cameras(ctx):
 @bot.command(name='charts')
 async def list_charts(ctx):
     """List all available charts and graphs"""
-    if not image_cache:
+    if not image_cache.get('images'):
         await update_image_cache()
     
-    if not image_cache:
+    if not image_cache.get('images'):
         await ctx.send("Error: Unable to fetch chart list")
         return
 
@@ -171,7 +272,7 @@ async def list_charts(ctx):
         color=discord.Color.blue()
     )
 
-    charts = {id: img for id, img in image_cache.get('images', {}).items() 
+    charts = {id: img for id, img in image_cache['images'].items() 
              if img.get('category') == 'chart'}
 
     for chart_id, chart_data in charts.items():
@@ -186,10 +287,10 @@ async def list_charts(ctx):
 @bot.command(name='satellites')
 async def list_satellites(ctx):
     """List all available satellite images"""
-    if not image_cache:
+    if not image_cache.get('images'):
         await update_image_cache()
     
-    if not image_cache:
+    if not image_cache.get('images'):
         await ctx.send("Error: Unable to fetch satellite image list")
         return
 
@@ -199,7 +300,7 @@ async def list_satellites(ctx):
         color=discord.Color.blue()
     )
 
-    satellites = {id: img for id, img in image_cache.get('images', {}).items() 
+    satellites = {id: img for id, img in image_cache['images'].items() 
                  if img.get('category') == 'satellite'}
 
     for sat_id, sat_data in satellites.items():
@@ -214,28 +315,34 @@ async def list_satellites(ctx):
 @bot.command(name='view')
 async def view_image(ctx, image_id: str):
     """View a specific aurora camera, chart, or satellite image"""
-    if not image_cache:
-        await update_image_cache()
-    
-    if not image_cache or 'images' not in image_cache:
-        await ctx.send("Error: Unable to fetch image data")
-        return
+    try:
+        # Always force a fresh update for the specific image
+        await update_image_cache(specific_image=image_id, force_update=True)
+        
+        if image_id not in image_cache.get('images', {}):
+            await ctx.send(f"Error: Image ID '{image_id}' not found. Use !cameras, !charts, or !satellites to see available images.")
+            return
 
-    if image_id not in image_cache['images']:
-        await ctx.send(f"Error: Image ID '{image_id}' not found. Use !cameras, !charts, or !satellites to see available images.")
-        return
-
-    image_data = image_cache['images'][image_id]
-    
-    embed = discord.Embed(
-        title=image_data['name'],
-        description=image_data['description'],
-        color=discord.Color.blue()
-    )
-    embed.set_image(url=image_data['url'])
-    embed.set_footer(text=f"Cache time: {image_data['cache']} seconds")
-
-    await ctx.send(embed=embed)
+        image_data = image_cache['images'][image_id]
+        current_time = int(time.time())
+        
+        # Add timestamp to URL to bypass cache
+        image_url = f"{image_data['url']}{'&' if '?' in image_data['url'] else '?'}t={current_time}"
+        
+        embed = discord.Embed(
+            title=image_data['name'],
+            description=image_data['description'],
+            color=discord.Color.blue()
+        )
+        embed.set_image(url=image_url)
+        embed.set_footer(text="Real-time image")
+        
+        logger.info(f"Sending real-time image for {image_id}")
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        await ctx.send(f"Error: Unable to fetch the image. Please try again.")
+        logger.error(f"Error in view_image command for {image_id}: {str(e)}")
 
 @bot.command(name='help')
 async def help_command(ctx):
