@@ -23,8 +23,13 @@ intents.guilds = True
 intents.messages = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
+# Guild ID for your server
+GUILD_ID = 1360650689771995369
+
+guild = discord.Object(id=GUILD_ID)
+
 # Register the ping command as a slash command
-@bot.tree.command(name="ping", description="Check the bot's latency")
+@bot.tree.command(name="ping", description="Check the bot's latency", guild=guild)
 async def ping(interaction: discord.Interaction):
     """Respond with the bot's latency"""
     start_time = time.time()
@@ -51,10 +56,11 @@ async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     update_cache_loop.start()
     await update_image_cache()
-    # Sync slash commands globally
+    
+    # Sync slash commands for the specific guild
     try:
-        await bot.tree.sync()
-        print("Slash commands synced")
+        await bot.tree.sync(guild=guild)
+        print(f"Slash commands synced for guild {GUILD_ID}")
     except Exception as e:
         print(f"Error syncing slash commands: {e}")
 
