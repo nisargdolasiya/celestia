@@ -240,17 +240,28 @@ async def list_cameras(ctx):
 
     embed = discord.Embed(
         title="Available Aurora Cameras",
-        description="List of available aurora cameras",
+        description="Currently active aurora cameras",
         color=discord.Color.blue()
     )
 
-    cameras = {id: img for id, img in image_cache['images'].items() 
-              if img.get('category') == 'cam'}
+    # Only show Yellowknife and Rothney cameras
+    active_cameras = {
+        id: img for id, img in image_cache['images'].items() 
+        if img.get('category') == 'cam' and 
+        any(loc in img['name'].lower() for loc in ['yellowknife', 'rothney'])
+    }
 
-    for cam_id, cam_data in cameras.items():
+    for cam_id, cam_data in active_cameras.items():
         embed.add_field(
             name=cam_data['name'],
             value=f"ID: `{cam_id}`\n{cam_data['description']}",
+            inline=False
+        )
+
+    if not active_cameras:
+        embed.add_field(
+            name="No Active Cameras",
+            value="Currently no aurora cameras are active. Please try again later.",
             inline=False
         )
 
