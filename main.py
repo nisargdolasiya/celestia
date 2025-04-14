@@ -21,22 +21,11 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
-bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=commands.when_mentioned_or(''), intents=intents, help_command=None)
 
 # Guild ID for your server
 GUILD_ID = 1360650689771995369
-
 guild = discord.Object(id=GUILD_ID)
-
-# Register the ping command as a slash command
-@bot.tree.command(name="ping", description="Check the bot's latency")
-async def ping(interaction: discord.Interaction):
-    """Respond with the bot's latency"""
-    start_time = time.time()
-    await interaction.response.send_message(f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms")
-    end_time = time.time()
-    response_time = round((end_time - start_time) * 1000)
-    await interaction.edit_original_response(content=f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms\nResponse Time: {response_time} ms")
 
 # Request headers
 HEADERS = {
@@ -57,7 +46,6 @@ async def on_ready():
     update_cache_loop.start()
     await update_image_cache()
     
-    # Sync slash commands for the specific guild
     try:
         await bot.tree.sync(guild=guild)
         print(f"Slash commands synced for guild {GUILD_ID}")
@@ -65,20 +53,16 @@ async def on_ready():
         print(f"Error syncing slash commands: {e}")
 
 def is_cache_valid(image_id):
-    """Check if the cached image data is still valid"""
     if not image_cache.get('images') or image_id not in image_cache['images']:
         return False
-    
     image_data = image_cache['images'][image_id]
-    cache_duration = image_data.get('cache', 3600)  # Default to 1 hour if not specified
+    cache_duration = image_data.get('cache', 3600)
     last_update = image_data.get('last_update', 0)
     return time.time() - last_update < cache_duration
 
 async def update_image_cache(specific_image=None, force_update=False):
-    """Update the cache of available images from the API"""
     try:
         if specific_image:
-            # Always fetch fresh data for specific image requests
             logger.info(f"Fetching fresh data for image: {specific_image}")
             response = requests.get(
                 "https://api.auroras.live/v1/?type=images&action=list",
@@ -91,22 +75,18 @@ async def update_image_cache(specific_image=None, force_update=False):
             
             if specific_image in data.get('images', {}):
                 image_data = data['images'][specific_image]
-                # Always fetch the latest image
                 image_response = requests.get(
                     image_data['url'],
                     headers=HEADERS,
                     allow_redirects=True,
                     timeout=10,
-                    params={'t': int(time.time())}  # Add timestamp to bypass cache
+                    params={'t': int(time.time())}
                 )
                 image_response.raise_for_status()
-                
-                # Update cache with fresh data
                 image_cache['images'][specific_image] = image_data
                 image_data['last_update'] = time.time()
                 logger.info(f"Successfully updated image {specific_image}")
         else:
-            # Update all images
             logger.info("Fetching fresh image list")
             response = requests.get(
                 "https://api.auroras.live/v1/?type=images&action=list",
@@ -116,22 +96,18 @@ async def update_image_cache(specific_image=None, force_update=False):
             )
             response.raise_for_status()
             data = response.json()
-            
-            # Always update with fresh data
             new_images = data.get('images', {})
             current_time = time.time()
             
-            # If forcing update, fetch fresh images for all
             if force_update:
                 for img_id, img_data in new_images.items():
                     try:
-                        # Fetch fresh image
                         image_response = requests.get(
                             img_data['url'],
                             headers=HEADERS,
                             allow_redirects=True,
                             timeout=10,
-                            params={'t': int(current_time)}  # Add timestamp to bypass cache
+                            params={'t': int(current_time)}
                         )
                         image_response.raise_for_status()
                         img_data['last_update'] = current_time
@@ -153,29 +129,28 @@ async def update_image_cache(specific_image=None, force_update=False):
 
 @tasks.loop(minutes=5)
 async def update_cache_loop():
-    """Periodically update the image cache"""
     await update_image_cache()
 
-@bot.command(name='aurora')
-async def aurora(ctx, lat: float = None, long: float = None):
-    """Get aurora information for a specific location"""
-    if lat is None or long is None:
-        await ctx.send("Please provide both latitude and longitude. Usage: !aurora <latitude> <longitude>")
-        return
+@bot.tree.command(name="ping", description="Check the bot's latency")
+@app_commands.guilds(GUILD_ID)
+async def ping(interaction: discord.Interaction):
+    start_time = time.time()
+    await interaction.response.send_message(f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms")
+    end_time = time.time()
+    response_time = round((end_time - start_time) * 1000)
+    await interaction.edit_original_response(content=f"Pong! 🏓\nLatency: {round(bot.latency * 1000)} ms\nResponse Time: {response_time} ms")
 
-    if not (-90 <= lat <= 90) or not (-180 <= long <= 180):
-        await ctx.send("Invalid coordinates! Latitude must be between -90 and 90, and longitude between -180 and 180.")
-        return
-
+@bot.tree.command(name="aurora", description="Get aurora information for a location")
+@app_commands.describe(latitude="The latitude of the location", longitude="The longitude of the location")
+@app_commands.guilds(GUILD_ID)
+async def aurora(interaction: discord.Interaction, latitude: app_commands.Range[float, -90.0, 90.0], longitude: app_commands.Range[float, -180.0, 180.0]):
+    await interaction.response.defer()
     try:
-        # Get timezone offset in minutes
         tz_offset = -datetime.datetime.now().astimezone().utcoffset().total_seconds() / 60
-
-        # Prepare request payload
         payload = {
             "nowcast:local": {
-                "lat": lat,
-                "long": long,
+                "lat": latitude,
+                "long": longitude,
             },
             "format": {
                 "date": {
@@ -184,7 +159,6 @@ async def aurora(ctx, lat: float = None, long: float = None):
             }
         }
 
-        # Make POST request to v2 API
         response = requests.post(
             "https://v2.api.auroras.live/nowcast",
             json=payload,
@@ -195,75 +169,56 @@ async def aurora(ctx, lat: float = None, long: float = None):
         response.raise_for_status()
         data = response.json()
 
-        # Create an embed with the information
-        embed = discord.Embed(
-            title="Aurora Nowcast",
-            color=discord.Color.blue()
-        )
+        embed = discord.Embed(title="Aurora Nowcast", color=discord.Color.blue())
+        embed.add_field(name="Location", value=f"Latitude: {latitude}°\nLongitude: {longitude}°", inline=False)
 
-        # Add location information
-        embed.add_field(
-            name="Location",
-            value=f"Latitude: {lat}°\nLongitude: {long}°",
-            inline=False
-        )
-
-        # Add probability information
         color_meanings = {
             "green": "No chance",
             "yellow": "Slight chance",
             "orange": "Good chance",
             "red": "Almost certain"
         }
-
         embed.add_field(
             name="Aurora Probability",
             value=f"Value: {data.get('value')}%\nStatus: {color_meanings.get(data.get('color', '').lower(), 'Unknown')}",
             inline=False
         )
 
-        # Get solar wind data from v1 API
         wind_url = "https://api.auroras.live/v1/?type=ace&data=all"
-        wind_response = requests.get(wind_url, headers=HEADERS, allow_redirects=True, timeout=10)
+        wind_response = requests.get(wind_url, headers=HEADERS, timeout=10)
         wind_response.raise_for_status()
         wind_data = wind_response.json()
 
-        # wind parameters from the response
         if wind_data and all(key in wind_data for key in ['speed', 'density', 'bz']):
             embed.add_field(
                 name="Solar Wind",
-                value=f"Speed: {wind_data['speed']} km/s\n"
-                      f"Density: {wind_data['density']} p/cm³\n"
-                      f"Bz: {wind_data['bz']} nT",
+                value=f"Speed: {wind_data['speed']} km/s\nDensity: {wind_data['density']} p/cm³\nBz: {wind_data['bz']} nT",
                 inline=False
             )
 
-        # Add timestamps
         embed.add_field(
             name="Timestamps",
             value=f"Data from: {data.get('date')}\nRequest time: {data.get('request_date')}",
             inline=False
         )
 
-        await ctx.send(embed=embed)
-
+        await interaction.followup.send(embed=embed)
     except requests.RequestException as e:
-        await ctx.send(f"Error fetching aurora data: {str(e)}")
-        print(f"Full error: {e.response.text if hasattr(e, 'response') else str(e)}")
+        await interaction.followup.send(f"Error fetching aurora data: {str(e)}")
     except Exception as e:
-        await ctx.send(f"An error occurred: {str(e)}")
+        await interaction.followup.send(f"An error occurred: {str(e)}")
 
-@bot.command(name='cameras')
-async def list_cameras(ctx):
-    """List all available aurora cameras"""
-    # Only update cache if needed
+@bot.tree.command(name="cameras", description="List all available aurora cameras")
+@app_commands.guilds(GUILD_ID)
+async def cameras(interaction: discord.Interaction):
+    await interaction.response.defer()
     if not image_cache.get('images'):
         await update_image_cache()
     elif not is_cache_valid('cameras'):
         await update_image_cache()
     
     if not image_cache.get('images'):
-        await ctx.send("Error: Unable to fetch camera list")
+        await interaction.followup.send("Error: Unable to fetch camera list")
         return
 
     embed = discord.Embed(
@@ -272,7 +227,6 @@ async def list_cameras(ctx):
         color=discord.Color.blue()
     )
 
-    # Only show Yellowknife and Rothney cameras
     active_cameras = {
         id: img for id, img in image_cache['images'].items() 
         if img.get('category') == 'cam' and 
@@ -293,26 +247,26 @@ async def list_cameras(ctx):
             inline=False
         )
 
-    await ctx.send(embed=embed)
+    await interaction.followup.send(embed=embed)
 
-@bot.command(name='charts')
-async def list_charts(ctx):
-    """List all available charts and graphs"""
+@bot.tree.command(name="charts", description="List all available charts and graphs")
+@app_commands.guilds(GUILD_ID)
+async def charts(interaction: discord.Interaction):
+    await interaction.response.defer()
     if not image_cache.get('images'):
         await update_image_cache()
     
     if not image_cache.get('images'):
-        await ctx.send("Error: Unable to fetch chart list")
+        await interaction.followup.send("Error: Unable to fetch chart list")
         return
 
     embed = discord.Embed(
         title="Available Charts and Graphs",
-        description="Use `!view <chart_id>` to view a specific chart",
+        description="Use `/view <chart_id>` to view a specific chart",
         color=discord.Color.blue()
     )
 
-    charts = {id: img for id, img in image_cache['images'].items() 
-             if img.get('category') == 'chart'}
+    charts = {id: img for id, img in image_cache['images'].items() if img.get('category') == 'chart'}
 
     for chart_id, chart_data in charts.items():
         embed.add_field(
@@ -321,26 +275,26 @@ async def list_charts(ctx):
             inline=False
         )
 
-    await ctx.send(embed=embed)
+    await interaction.followup.send(embed=embed)
 
-@bot.command(name='satellites')
-async def list_satellites(ctx):
-    """List all available satellite images"""
+@bot.tree.command(name="satellites", description="List all available satellite images")
+@app_commands.guilds(GUILD_ID)
+async def satellites(interaction: discord.Interaction):
+    await interaction.response.defer()
     if not image_cache.get('images'):
         await update_image_cache()
     
     if not image_cache.get('images'):
-        await ctx.send("Error: Unable to fetch satellite image list")
+        await interaction.followup.send("Error: Unable to fetch satellite image list")
         return
 
     embed = discord.Embed(
         title="Available Satellite Images",
-        description="Use `!view <image_id>` to view a specific satellite image",
+        description="Use `/view <image_id>` to view a specific satellite image",
         color=discord.Color.blue()
     )
 
-    satellites = {id: img for id, img in image_cache['images'].items() 
-                 if img.get('category') == 'satellite'}
+    satellites = {id: img for id, img in image_cache['images'].items() if img.get('category') == 'satellite'}
 
     for sat_id, sat_data in satellites.items():
         embed.add_field(
@@ -349,23 +303,22 @@ async def list_satellites(ctx):
             inline=False
         )
 
-    await ctx.send(embed=embed)
+    await interaction.followup.send(embed=embed)
 
-@bot.command(name='view')
-async def view_image(ctx, image_id: str):
-    """View a specific aurora camera, chart, or satellite image"""
+@bot.tree.command(name="view", description="View a specific image by ID")
+@app_commands.describe(image_id="The ID of the image to view")
+@app_commands.guilds(GUILD_ID)
+async def view(interaction: discord.Interaction, image_id: str):
+    await interaction.response.defer()
     try:
-        # Always force a fresh update for the specific image
         await update_image_cache(specific_image=image_id, force_update=True)
         
         if image_id not in image_cache.get('images', {}):
-            await ctx.send(f"Error: Image ID '{image_id}' not found. Use !cameras, !charts, or !satellites to see available images.")
+            await interaction.followup.send(f"Error: Image ID '{image_id}' not found. Use /cameras, /charts, or /satellites to see available images.")
             return
 
         image_data = image_cache['images'][image_id]
         current_time = int(time.time())
-        
-        # Add timestamp to URL to bypass cache
         image_url = f"{image_data['url']}{'&' if '?' in image_data['url'] else '?'}t={current_time}"
         
         embed = discord.Embed(
@@ -377,50 +330,45 @@ async def view_image(ctx, image_id: str):
         embed.set_footer(text="Real-time image")
         
         logger.info(f"Sending real-time image for {image_id}")
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
     except Exception as e:
-        await ctx.send(f"Error: Unable to fetch the image. Please try again.")
-        logger.error(f"Error in view_image command for {image_id}: {str(e)}")
+        await interaction.followup.send(f"Error: Unable to fetch the image. Please try again.")
+        logger.error(f"Error in view command for {image_id}: {str(e)}")
 
-@bot.command(name='help')
-async def help_command(ctx):
-    """Show all available commands"""
+@bot.tree.command(name="help", description="Show all available commands")
+@app_commands.guilds(GUILD_ID)
+async def help(interaction: discord.Interaction):
     embed = discord.Embed(
         title="Celestia Bot Commands",
         description="Here are all the available commands:",
         color=discord.Color.blue()
     )
 
-    # Aurora Information
     embed.add_field(
         name="Aurora Commands",
-        value="`!aurora <latitude> <longitude>` - Get aurora information for a location\n"
-              "Example: `!aurora 64.5 -147.5` (Fairbanks, Alaska)",
+        value="`/aurora <latitude> <longitude>` - Get aurora information for a location\n"
+              "Example: `/aurora 64.5 -147.5` (Fairbanks, Alaska)",
         inline=False
     )
 
-    # Image Commands
     embed.add_field(
         name="Image Commands",
-        value="`!cameras` - List all available aurora webcams\n"
-              "`!charts` - List all available charts and graphs\n"
-              "`!satellites` - List all available satellite images\n"
-              "`!view <image_id>` - View a specific image",
+        value="`/cameras` - List available aurora webcams\n"
+              "`/charts` - List available charts and graphs\n"
+              "`/satellites` - List available satellite images\n"
+              "`/view <image_id>` - View a specific image",
         inline=False
     )
 
-    # Help Command
     embed.add_field(
-        name="Help",
-        value="`!help` - Show this help message\n\nSlash Commands:\n`/ping` - Check the bot's latency",
+        name="Utility Commands",
+        value="`/ping` - Check bot latency\n"
+              "`/help` - Show this help message",
         inline=False
     )
 
-    # Add footer with support info
     embed.set_footer(text="For more help, join our support server or visit our GitHub page")
+    await interaction.response.send_message(embed=embed)
 
-    await ctx.send(embed=embed)
-
-# Run the bot
 bot.run(TOKEN)

@@ -12,12 +12,13 @@ A Discord bot that provides real-time aurora information, forecasts, and live ca
 
 ## Commands
 
-- `!aurora <latitude> <longitude>` - Get aurora information for a specific location
-- `!cameras` - List all available aurora webcams
-- `!charts` - List all available charts and graphs
-- `!satellites` - List all available satellite images
-- `!view <image_id>` - View a specific image
-- `!help` - Show help message/ List all available commands
+- `/aurora <latitude> <longitude>` - Get aurora information for a specific location
+- `/cameras` - List all available aurora webcams
+- `/charts` - List all available charts and graphs
+- `/satellites` - List all available satellite images
+- `/view <image_id>` - View a specific image
+- `/ping` - Check bot latency
+- `/help` - Show help message/ List all available commands
 
 ## Setup
 
@@ -43,4 +44,3 @@ python main.py
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
