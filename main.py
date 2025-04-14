@@ -21,7 +21,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.messages = True
-bot = commands.Bot(command_prefix=commands.when_mentioned_or(''), intents=intents, help_command=None)
+bot = commands.Bot(command_prefix=commands.when_mentioned_or('!'), intents=intents, help_command=None)
 
 # Guild ID for your server
 GUILD_ID = 1360650689771995369
@@ -47,6 +47,8 @@ async def on_ready():
     await update_image_cache()
     
     try:
+        # Sync slash commands
+        bot.tree.copy_global_to(guild=guild)
         await bot.tree.sync(guild=guild)
         print(f"Slash commands synced for guild {GUILD_ID}")
     except Exception as e:
