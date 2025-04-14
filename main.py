@@ -84,24 +84,26 @@ async def refresh_image_cache(specific_image=None):
 
 def generate_aurora_embed(lat, lng, data, wind_data):
     """Create formatted embed for aurora data"""
-    color_mapping = {
-        'green': 0x00ff00,
-        'yellow': 0xffff00,
-        'orange': 0xffa500,
-        'red': 0xff0000
+    status_messages = {
+        'green': ('No Chance', 0x00ff00),
+        'yellow': ('Slight Chance', 0xffff00),
+        'orange': ('Good Chance', 0xffa500),
+        'red': ('Almost Certain', 0xff0000)
     }
+    
+    status, color = status_messages.get(data.get('color', '').lower(), (0x0000ff, 'Unknown Status'))
     
     embed = discord.Embed(
         title=f"Aurora Nowcast for {lat}°, {lng}°",
-        color=color_mapping.get(data.get('color', '').lower(), 0x0000ff)
+        color=color,
+        description=f"**Current Status:** {status}"
     )
     
     embed.add_field(name="Probability", value=f"{data.get('value', 0)}%", inline=True)
-    embed.add_field(name="Status", value=data.get('color', 'Unknown').title(), inline=True)
     
     if wind_data:
         embed.add_field(
-            name="Solar Wind",
+            name="Solar Wind Conditions",
             value=f"**Speed:** {wind_data.get('speed', 'N/A')} km/s\n"
                   f"**Density:** {wind_data.get('density', 'N/A')} p/cm³\n"
                   f"**Bz:** {wind_data.get('bz', 'N/A')} nT",
