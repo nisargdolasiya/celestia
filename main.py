@@ -15,7 +15,6 @@ logger = logging.getLogger('celestia')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-# Note: We're ignoring any GUILD_ID in .env to make the bot truly global
 
 # Bot configuration
 intents = discord.Intents.default()
