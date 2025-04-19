@@ -15,15 +15,12 @@ logger = logging.getLogger('celestia')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+# Note: We're ignoring any GUILD_ID in .env to make the bot truly global
 
 # Bot configuration
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix=commands.when_mentioned_or(''), intents=intents, help_command=None)
-
-# Server configuration
-GUILD_ID = 1360650689771995369
-guild_object = discord.Object(id=GUILD_ID)
 
 # API configuration
 API_HEADERS = {
@@ -46,8 +43,9 @@ async def on_ready():
     update_task.start()
     
     try:
-        await bot.tree.sync(guild=guild_object)
-        logger.info('Successfully synced application commands')
+        # Sync commands globally instead of to a specific guild
+        await bot.tree.sync()
+        logger.info('Successfully synced application commands globally')
     except Exception as error:
         logger.error(f'Command sync error: {error}')
 
@@ -114,7 +112,6 @@ def generate_aurora_embed(lat, lng, data, wind_data):
     return embed
 
 @bot.tree.command(name="ping", description="Check bot responsiveness")
-@app_commands.guilds(GUILD_ID)
 async def ping_command(interaction: discord.Interaction):
     """Latency check command"""
     latency = round(bot.latency * 1000)
@@ -129,7 +126,6 @@ async def ping_command(interaction: discord.Interaction):
     latitude="Geographic latitude (-90 to 90)",
     longitude="Geographic longitude (-180 to 180)"
 )
-@app_commands.guilds(GUILD_ID)
 async def aurora_command(
     interaction: discord.Interaction,
     latitude: app_commands.Range[float, -90, 90],
@@ -178,7 +174,6 @@ async def aurora_command(
 
 @bot.tree.command(name="view", description="Display space weather resource")
 @app_commands.describe(resource_id="ID from /cameras, /charts, or /satellites")
-@app_commands.guilds(GUILD_ID)
 async def view_command(interaction: discord.Interaction, resource_id: str):
     """Image display command"""
     await interaction.response.defer()
@@ -201,7 +196,6 @@ async def view_command(interaction: discord.Interaction, resource_id: str):
         await interaction.followup.send("Error loading resource")
 
 @bot.tree.command(name="cameras", description="List available aurora cameras")
-@app_commands.guilds(GUILD_ID)
 async def cameras_command(interaction: discord.Interaction):
     """Camera listing command"""
     await interaction.response.defer()
@@ -228,7 +222,6 @@ async def cameras_command(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="charts", description="List available space weather charts")
-@app_commands.guilds(GUILD_ID)
 async def charts_command(interaction: discord.Interaction):
     """Chart listing command"""
     await interaction.response.defer()
@@ -254,7 +247,6 @@ async def charts_command(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="satellites", description="List satellite imagery sources")
-@app_commands.guilds(GUILD_ID)
 async def satellites_command(interaction: discord.Interaction):
     """Satellite listing command"""
     await interaction.response.defer()
@@ -280,7 +272,6 @@ async def satellites_command(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="help", description="Show usage information")
-@app_commands.guilds(GUILD_ID)
 async def help_command(interaction: discord.Interaction):
     """Help command"""
     embed = discord.Embed(title="Celestia Bot Commands", color=0x109319)
