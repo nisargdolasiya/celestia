@@ -34,6 +34,17 @@ image_cache = {
     'data': {}
 }
 
+# List of inactive charts to filter out
+INACTIVE_CHARTS = {
+    'goes1315',
+    'hobartmag',
+    'launcestonmag',
+    'hobartkindex',
+    'launcestonkindex',
+    'wing-kp-12-hour',
+    'goes-magnetometer'
+}
+
 @bot.event
 async def on_ready():
     """Bot startup handler"""
@@ -64,15 +75,17 @@ async def refresh_image_cache(specific_image=None):
         current_timestamp = time.time()
         
         if specific_image:
-            if specific_image in fresh_data:
+            if specific_image in fresh_data and specific_image not in INACTIVE_CHARTS:
                 image_cache['data'][specific_image] = {
                     **fresh_data[specific_image],
                     'last_updated': current_timestamp
                 }
         else:
+            # Filter out inactive charts when caching all data
             image_cache['data'] = {
                 k: {**v, 'last_updated': current_timestamp}
                 for k, v in fresh_data.items()
+                if k not in INACTIVE_CHARTS
             }
             image_cache['last_updated'] = current_timestamp
         
@@ -177,6 +190,11 @@ async def view_command(interaction: discord.Interaction, resource_id: str):
     """Image display command"""
     await interaction.response.defer()
     
+    # Check if the requested resource is an inactive chart
+    if resource_id in INACTIVE_CHARTS:
+        await interaction.followup.send("This chart is currently inactive and unavailable.")
+        return
+    
     await refresh_image_cache(specific_image=resource_id)
     resource_data = image_cache['data'].get(resource_id)
     
@@ -228,11 +246,11 @@ async def charts_command(interaction: discord.Interaction):
     
     chart_list = [
         (id, data) for id, data in image_cache['data'].items()
-        if data.get('category') == 'chart'
+        if data.get('category') == 'chart' and id not in INACTIVE_CHARTS
     ]
     
     if not chart_list:
-        await interaction.followup.send("No charts available")
+        await interaction.followup.send("No active charts available")
         return
     
     embed = discord.Embed(title="Space Weather Charts")
