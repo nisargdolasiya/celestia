@@ -268,7 +268,7 @@ async def servers_command(interaction: discord.Interaction):
     
     # Double-check permission in case the decorator check fails
     if not OWNER_ID or str(interaction.user.id) != OWNER_ID:
-        await interaction.response.send_message(f"This command is restricted to the bot owner only. Your ID is {user_id} and the configured owner ID is '{OWNER_ID}'.", ephemeral=True)
+        await interaction.response.send_message(f"This command is restricted to the bot owner only.", ephemeral=True)
         return
         
     # Optional guild restriction if GUILD_ID is set
