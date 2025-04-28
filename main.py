@@ -16,7 +16,11 @@ logger = logging.getLogger('celestia')
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 OWNER_ID = os.getenv('OWNER_ID', '')  # Default to empty string if not found
-OWNER_GUILD_ID = os.getenv('GUILD_ID', '')  # Default to empty string if not found
+GUILD_ID = os.getenv('GUILD_ID', '')  # Default to empty string if not found
+
+# Print environment variables for debugging (will only show in logs)
+print(f"OWNER_ID set to: '{OWNER_ID}'")
+print(f"GUILD_ID set to: '{GUILD_ID}'")
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -53,18 +57,71 @@ async def on_ready():
     logger.info(f'Logged in as {bot.user} (ID: {bot.user.id})')
     await refresh_image_cache()
     update_task.start()
-    
+
     try:
-        # Sync global commands (non-owner commands)
+        # First clear all commands to start fresh
+        bot.tree.clear_commands(guild=None)
+        
+        # Add global commands (available to everyone)
+        @bot.tree.command(name="ping", description="Check bot latency")
+        async def global_ping_command(interaction: discord.Interaction):
+            await ping_command(interaction)
+            
+        @bot.tree.command(name="aurora", description="Get aurora prediction for a location")
+        @app_commands.describe(
+            latitude="Latitude (-90 to 90)",
+            longitude="Longitude (-180 to 180)"
+        )
+        async def global_aurora_command(
+            interaction: discord.Interaction,
+            latitude: app_commands.Range[float, -90, 90],
+            longitude: app_commands.Range[float, -180, 180]
+        ):
+            await aurora_command(interaction, latitude, longitude)
+            
+        @bot.tree.command(name="view", description="View a specific resource")
+        @app_commands.describe(resource_id="ID of the resource to view")
+        async def global_view_command(interaction: discord.Interaction, resource_id: str):
+            await view_command(interaction, resource_id)
+            
+        @bot.tree.command(name="cameras", description="List available cameras")
+        async def global_cameras_command(interaction: discord.Interaction):
+            await cameras_command(interaction)
+            
+        @bot.tree.command(name="charts", description="List available charts")
+        async def global_charts_command(interaction: discord.Interaction):
+            await charts_command(interaction)
+            
+        @bot.tree.command(name="satellites", description="List available satellite images")
+        async def global_satellites_command(interaction: discord.Interaction):
+            await satellites_command(interaction)
+            
+        @bot.tree.command(name="help", description="Show bot commands and info")
+        async def global_help_command(interaction: discord.Interaction):
+            await help_command(interaction)
+        
+        # Sync global commands
         await bot.tree.sync()
         logger.info('Successfully synced application commands globally')
         
-        # Sync owner-only commands to the owner's guild
-        if OWNER_GUILD_ID:
-            owner_guild = discord.Object(id=int(OWNER_GUILD_ID))
-            bot.tree.copy_global_to(guild=owner_guild)
+        # Add and sync owner-only commands to the owner's guild
+        if GUILD_ID and OWNER_ID:
+            owner_guild = discord.Object(id=int(GUILD_ID))
+            
+            # Register the servers command only in the owner's guild
+            @bot.tree.command(name="servers", description="List servers the bot is in", guild=owner_guild)
+            async def guild_servers_command(interaction: discord.Interaction):
+                # Still check if the user is the owner for extra security
+                if str(interaction.user.id) != OWNER_ID:
+                    await interaction.response.send_message("This command is restricted to the bot owner only.", ephemeral=True)
+                    return
+                
+                # If we get here, the user is the owner in the owner guild
+                await servers_command(interaction)
+            
+            # Sync the guild-specific commands
             await bot.tree.sync(guild=owner_guild)
-            logger.info(f'Successfully synced owner commands to guild ID: {OWNER_GUILD_ID}')
+            logger.info(f'Successfully synced owner commands to guild ID: {GUILD_ID}')
     except Exception as error:
         logger.error(f'Command sync error: {error}')
 
@@ -132,7 +189,6 @@ def generate_aurora_embed(lat, lng, data, wind_data):
     embed.set_footer(text=f"Data updated: {data.get('date', 'Unknown')}")
     return embed
 
-@bot.tree.command(name="ping", description="Check bot responsiveness")
 async def ping_command(interaction: discord.Interaction):
     """Latency check command"""
     latency = round(bot.latency * 1000)
@@ -142,11 +198,6 @@ async def ping_command(interaction: discord.Interaction):
         f"Uptime: {datetime.datetime.now() - bot.start_time}"
     )
 
-@bot.tree.command(name="aurora", description="Get aurora forecast for coordinates")
-@app_commands.describe(
-    latitude="Geographic latitude (-90 to 90)",
-    longitude="Geographic longitude (-180 to 180)"
-)
 async def aurora_command(
     interaction: discord.Interaction,
     latitude: app_commands.Range[float, -90, 90],
@@ -193,8 +244,6 @@ async def aurora_command(
         logger.error(f"Aurora command error: {error}")
         await interaction.followup.send("Error processing request")
 
-@bot.tree.command(name="view", description="Display space weather resource")
-@app_commands.describe(resource_id="ID from /cameras, /charts, or /satellites")
 async def view_command(interaction: discord.Interaction, resource_id: str):
     """Image display command"""
     await interaction.response.defer()
@@ -221,7 +270,6 @@ async def view_command(interaction: discord.Interaction, resource_id: str):
         logger.error(f"View command error: {error}")
         await interaction.followup.send("Error loading resource")
 
-@bot.tree.command(name="cameras", description="List available aurora cameras")
 async def cameras_command(interaction: discord.Interaction):
     """Camera listing command"""
     await interaction.response.defer()
@@ -247,7 +295,6 @@ async def cameras_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="charts", description="List available space weather charts")
 async def charts_command(interaction: discord.Interaction):
     """Chart listing command"""
     await interaction.response.defer()
@@ -272,7 +319,6 @@ async def charts_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="satellites", description="List satellite imagery sources")
 async def satellites_command(interaction: discord.Interaction):
     """Satellite listing command"""
     await interaction.response.defer()
@@ -297,7 +343,6 @@ async def satellites_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="help", description="Show usage information")
 async def help_command(interaction: discord.Interaction):
     """Help command"""
     embed = discord.Embed(title="Celestia Bot Commands", color=0x109319)
@@ -317,20 +362,15 @@ async def help_command(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="servers", description="List servers the bot is in")
 async def servers_command(interaction: discord.Interaction):
     """Server listing command (Owner only, minimal info with improved owner retrieval)"""
-    # Both checks must be satisfied: 
-    # 1. The command must be used in the owner's guild if OWNER_GUILD_ID is set
-    # 2. The user must be the bot owner if OWNER_ID is set
-    
-    # Always check user first
-    if OWNER_ID and str(interaction.user.id) != OWNER_ID:
-        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+    # Double-check permission in case the decorator check fails
+    if not OWNER_ID or str(interaction.user.id) != OWNER_ID:
+        await interaction.response.send_message("This command is restricted to the bot owner only.", ephemeral=True)
         return
         
-    # Then check guild if needed
-    if OWNER_GUILD_ID and str(interaction.guild_id) != OWNER_GUILD_ID:
+    # Optional guild restriction if GUILD_ID is set
+    if GUILD_ID and str(interaction.guild_id) != GUILD_ID:
         await interaction.response.send_message("This command can only be used in the designated owner guild.", ephemeral=True)
         return
 
