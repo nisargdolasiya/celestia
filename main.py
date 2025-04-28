@@ -15,6 +15,8 @@ logger = logging.getLogger('celestia')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+OWNER_ID = os.getenv('OWNER_ID')
+OWNER_GUILD_ID = os.getenv('GUILD_ID')
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -53,7 +55,24 @@ async def on_ready():
     update_task.start()
     
     try:
-        # Sync commands globally instead of to a specific guild
+        # Clear and sync commands to the specific guild for owner commands
+        if OWNER_GUILD_ID:
+            # Get the guild object
+            guild = discord.Object(id=int(OWNER_GUILD_ID))
+            
+            # Clear existing commands in the guild
+            bot.tree.clear_commands(guild=guild)
+            
+            # Copy global commands to guild and add guild-specific commands
+            bot.tree.copy_global_to(guild=guild)
+            
+            # Sync commands to the guild
+            await bot.tree.sync(guild=guild)
+            logger.info(f'Successfully synced application commands to guild ID: {OWNER_GUILD_ID}')
+        
+        # Sync global commands (excluding guild-specific ones)
+        # Clear existing global commands first
+        bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
         logger.info('Successfully synced application commands globally')
     except Exception as error:
@@ -307,6 +326,39 @@ async def help_command(interaction: discord.Interaction):
         embed.add_field(name=name, value=value, inline=False)
     
     await interaction.response.send_message(embed=embed)
+
+# Owner-only command to view servers the bot is in
+# This command will only be visible in the owner's guild
+@app_commands.guilds(discord.Object(id=int(OWNER_GUILD_ID) if OWNER_GUILD_ID else 0))
+@bot.tree.command(name="servers", description="List all servers the bot is in (Owner only)")
+async def servers_command(interaction: discord.Interaction):
+    """Server listing command (Owner only)"""
+    # Check if the user is the bot owner
+    if not OWNER_ID or str(interaction.user.id) != OWNER_ID:
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Create an embed with server information
+    embed = discord.Embed(
+        title="Celestia Bot Servers",
+        description=f"Currently in {len(bot.guilds)} servers",
+        color=0x109319
+    )
+    
+    # Add each server to the embed
+    for guild in bot.guilds:
+        member_count = len(guild.members)
+        owner = f"<@{guild.owner_id}>" if guild.owner_id else "Unknown"
+        
+        embed.add_field(
+            name=f"{guild.name} (ID: {guild.id})",
+            value=f"Members: {member_count}\nOwner: {owner}\nJoined: {guild.me.joined_at.strftime('%Y-%m-%d')}", 
+            inline=False
+        )
+    
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 if __name__ == "__main__":
     bot.start_time = datetime.datetime.now()
