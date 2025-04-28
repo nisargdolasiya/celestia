@@ -59,136 +59,20 @@ async def on_ready():
     update_task.start()
 
     try:
-        # First clear all commands to start fresh
-        bot.tree.clear_commands(guild=None)
-        
-        # Add global commands (available to everyone)
-        @bot.tree.command(name="ping", description="Check bot latency")
-        async def global_ping_command(interaction: discord.Interaction):
-            await ping_command(interaction)
-            
-        @bot.tree.command(name="aurora", description="Get aurora prediction for a location")
-        @app_commands.describe(
-            latitude="Latitude (-90 to 90)",
-            longitude="Longitude (-180 to 180)"
-        )
-        async def global_aurora_command(
-            interaction: discord.Interaction,
-            latitude: app_commands.Range[float, -90, 90],
-            longitude: app_commands.Range[float, -180, 180]
-        ):
-            await aurora_command(interaction, latitude, longitude)
-            
-        @bot.tree.command(name="view", description="View a specific resource")
-        @app_commands.describe(resource_id="ID of the resource to view")
-        async def global_view_command(interaction: discord.Interaction, resource_id: str):
-            await view_command(interaction, resource_id)
-            
-        @bot.tree.command(name="cameras", description="List available cameras")
-        async def global_cameras_command(interaction: discord.Interaction):
-            await cameras_command(interaction)
-            
-        @bot.tree.command(name="charts", description="List available charts")
-        async def global_charts_command(interaction: discord.Interaction):
-            await charts_command(interaction)
-            
-        @bot.tree.command(name="satellites", description="List available satellite images")
-        async def global_satellites_command(interaction: discord.Interaction):
-            await satellites_command(interaction)
-            
-        @bot.tree.command(name="help", description="Show bot commands and info")
-        async def global_help_command(interaction: discord.Interaction):
-            await help_command(interaction)
-        
-        # Sync global commands
+        # Sync commands globally and to the owner's guild
         await bot.tree.sync()
         logger.info('Successfully synced application commands globally')
         
-        # Add and sync owner-only commands to the owner's guild
-        if GUILD_ID and OWNER_ID:
+        # If owner guild is set, also sync commands there
+        if GUILD_ID:
             owner_guild = discord.Object(id=int(GUILD_ID))
-            
-            # Register the servers command only in the owner's guild
-            @bot.tree.command(name="servers", description="List servers the bot is in", guild=owner_guild)
-            async def guild_servers_command(interaction: discord.Interaction):
-                # Still check if the user is the owner for extra security
-                if str(interaction.user.id) != OWNER_ID:
-                    await interaction.response.send_message("This command is restricted to the bot owner only.", ephemeral=True)
-                    return
-                
-                # If we get here, the user is the owner in the owner guild
-                await servers_command(interaction)
-            
-            # Sync the guild-specific commands
+            bot.tree.copy_global_to(guild=owner_guild)
             await bot.tree.sync(guild=owner_guild)
-            logger.info(f'Successfully synced owner commands to guild ID: {GUILD_ID}')
+            logger.info(f'Successfully synced commands to guild ID: {GUILD_ID}')
     except Exception as error:
         logger.error(f'Command sync error: {error}')
 
-@tasks.loop(minutes=15)
-async def update_task():
-    """Scheduled cache updates"""
-    await refresh_image_cache()
-
-async def refresh_image_cache(specific_image=None):
-    """Refresh image cache from API"""
-    try:
-        api_url = "https://api.auroras.live/v1/?type=images&action=list"
-        response = requests.get(api_url, headers=API_HEADERS, timeout=15)
-        response.raise_for_status()
-        
-        fresh_data = response.json().get('images', {})
-        current_timestamp = time.time()
-        
-        if specific_image:
-            if specific_image in fresh_data and specific_image not in INACTIVE_CHARTS:
-                image_cache['data'][specific_image] = {
-                    **fresh_data[specific_image],
-                    'last_updated': current_timestamp
-                }
-        else:
-            # Filter out inactive charts when caching all data
-            image_cache['data'] = {
-                k: {**v, 'last_updated': current_timestamp}
-                for k, v in fresh_data.items()
-                if k not in INACTIVE_CHARTS
-            }
-            image_cache['last_updated'] = current_timestamp
-        
-    except requests.exceptions.RequestException as error:
-        logger.error(f'API request failed: {error}')
-
-def generate_aurora_embed(lat, lng, data, wind_data):
-    """Create formatted embed for aurora data"""
-    status_messages = {
-        'green': ('No Chance', 0x00ff00),
-        'yellow': ('Slight Chance', 0xffff00),
-        'orange': ('Good Chance', 0xffa500),
-        'red': ('Almost Certain', 0xff0000)
-    }
-    
-    status, color = status_messages.get(data.get('color', '').lower(), (0x0000ff, 'Unknown Status'))
-    
-    embed = discord.Embed(
-        title=f"Aurora Nowcast for {lat}°, {lng}°",
-        color=color,
-        description=f"**Current Status:** {status}"
-    )
-    
-    embed.add_field(name="Probability", value=f"{data.get('value', 0)}%", inline=True)
-    
-    if wind_data:
-        embed.add_field(
-            name="Solar Wind Conditions",
-            value=f"**Speed:** {wind_data.get('speed', 'N/A')} km/s\n"
-                  f"**Density:** {wind_data.get('density', 'N/A')} p/cm³\n"
-                  f"**Bz:** {wind_data.get('bz', 'N/A')} nT",
-            inline=False
-        )
-    
-    embed.set_footer(text=f"Data updated: {data.get('date', 'Unknown')}")
-    return embed
-
+@bot.tree.command(name="ping", description="Check bot latency")
 async def ping_command(interaction: discord.Interaction):
     """Latency check command"""
     latency = round(bot.latency * 1000)
@@ -198,6 +82,11 @@ async def ping_command(interaction: discord.Interaction):
         f"Uptime: {datetime.datetime.now() - bot.start_time}"
     )
 
+@bot.tree.command(name="aurora", description="Get aurora prediction for a location")
+@app_commands.describe(
+    latitude="Latitude (-90 to 90)",
+    longitude="Longitude (-180 to 180)"
+)
 async def aurora_command(
     interaction: discord.Interaction,
     latitude: app_commands.Range[float, -90, 90],
@@ -244,6 +133,8 @@ async def aurora_command(
         logger.error(f"Aurora command error: {error}")
         await interaction.followup.send("Error processing request")
 
+@bot.tree.command(name="view", description="View a specific resource")
+@app_commands.describe(resource_id="ID of the resource to view")
 async def view_command(interaction: discord.Interaction, resource_id: str):
     """Image display command"""
     await interaction.response.defer()
@@ -270,6 +161,7 @@ async def view_command(interaction: discord.Interaction, resource_id: str):
         logger.error(f"View command error: {error}")
         await interaction.followup.send("Error loading resource")
 
+@bot.tree.command(name="cameras", description="List available cameras")
 async def cameras_command(interaction: discord.Interaction):
     """Camera listing command"""
     await interaction.response.defer()
@@ -295,6 +187,7 @@ async def cameras_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
+@bot.tree.command(name="charts", description="List available charts")
 async def charts_command(interaction: discord.Interaction):
     """Chart listing command"""
     await interaction.response.defer()
@@ -319,6 +212,7 @@ async def charts_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
+@bot.tree.command(name="satellites", description="List available satellite images")
 async def satellites_command(interaction: discord.Interaction):
     """Satellite listing command"""
     await interaction.response.defer()
@@ -343,6 +237,7 @@ async def satellites_command(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
+@bot.tree.command(name="help", description="Show bot commands and info")
 async def help_command(interaction: discord.Interaction):
     """Help command"""
     embed = discord.Embed(title="Celestia Bot Commands", color=0x109319)
@@ -362,6 +257,7 @@ async def help_command(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="servers", description="List servers the bot is in", guild=discord.Object(id=int(GUILD_ID)) if GUILD_ID else None)
 async def servers_command(interaction: discord.Interaction):
     """Server listing command (Owner only, minimal info with improved owner retrieval)"""
     # Double-check permission in case the decorator check fails
@@ -535,6 +431,70 @@ async def servers_command(interaction: discord.Interaction):
     # Update the initial page's owner info
     updated_embed = await update_owners(initial_embed, start_idx, end_idx)
     await message.edit(embed=updated_embed)
+
+@tasks.loop(minutes=15)
+async def update_task():
+    """Scheduled cache updates"""
+    await refresh_image_cache()
+
+async def refresh_image_cache(specific_image=None):
+    """Refresh image cache from API"""
+    try:
+        api_url = "https://api.auroras.live/v1/?type=images&action=list"
+        response = requests.get(api_url, headers=API_HEADERS, timeout=15)
+        response.raise_for_status()
+        
+        fresh_data = response.json().get('images', {})
+        current_timestamp = time.time()
+        
+        if specific_image:
+            if specific_image in fresh_data and specific_image not in INACTIVE_CHARTS:
+                image_cache['data'][specific_image] = {
+                    **fresh_data[specific_image],
+                    'last_updated': current_timestamp
+                }
+        else:
+            # Filter out inactive charts when caching all data
+            image_cache['data'] = {
+                k: {**v, 'last_updated': current_timestamp}
+                for k, v in fresh_data.items()
+                if k not in INACTIVE_CHARTS
+            }
+            image_cache['last_updated'] = current_timestamp
+        
+    except requests.exceptions.RequestException as error:
+        logger.error(f'API request failed: {error}')
+
+def generate_aurora_embed(lat, lng, data, wind_data):
+    """Create formatted embed for aurora data"""
+    status_messages = {
+        'green': ('No Chance', 0x00ff00),
+        'yellow': ('Slight Chance', 0xffff00),
+        'orange': ('Good Chance', 0xffa500),
+        'red': ('Almost Certain', 0xff0000)
+    }
+    
+    status, color = status_messages.get(data.get('color', '').lower(), (0x0000ff, 'Unknown Status'))
+    
+    embed = discord.Embed(
+        title=f"Aurora Nowcast for {lat}°, {lng}°",
+        color=color,
+        description=f"**Current Status:** {status}"
+    )
+    
+    embed.add_field(name="Probability", value=f"{data.get('value', 0)}%", inline=True)
+    
+    if wind_data:
+        embed.add_field(
+            name="Solar Wind Conditions",
+            value=f"**Speed:** {wind_data.get('speed', 'N/A')} km/s\n"
+                  f"**Density:** {wind_data.get('density', 'N/A')} p/cm³\n"
+                  f"**Bz:** {wind_data.get('bz', 'N/A')} nT",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Data updated: {data.get('date', 'Unknown')}")
+    return embed
 
 if __name__ == "__main__":
     bot.start_time = datetime.datetime.now()
