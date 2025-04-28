@@ -15,6 +15,8 @@ logger = logging.getLogger('celestia')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
+OWNER_ID = os.getenv('OWNER_ID')
+OWNER_GUILD_ID = os.getenv('GUILD_ID')
 
 # Bot configuration
 intents = discord.Intents.default()
@@ -53,9 +55,16 @@ async def on_ready():
     update_task.start()
     
     try:
-        # Sync commands globally instead of to a specific guild
+        # Sync global commands (non-owner commands)
         await bot.tree.sync()
         logger.info('Successfully synced application commands globally')
+        
+        # Sync owner-only commands to the owner's guild
+        if OWNER_GUILD_ID:
+            owner_guild = discord.Object(id=int(OWNER_GUILD_ID))
+            bot.tree.copy_global_to(guild=owner_guild)
+            await bot.tree.sync(guild=owner_guild)
+            logger.info(f'Successfully synced owner commands to guild ID: {OWNER_GUILD_ID}')
     except Exception as error:
         logger.error(f'Command sync error: {error}')
 
@@ -307,6 +316,180 @@ async def help_command(interaction: discord.Interaction):
         embed.add_field(name=name, value=value, inline=False)
     
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="servers", description="List servers the bot is in")
+async def servers_command(interaction: discord.Interaction):
+    """Server listing command (Owner only, minimal info with improved owner retrieval)"""
+    # Check if the command is used in the owner's guild
+    if OWNER_GUILD_ID and str(interaction.guild_id) != OWNER_GUILD_ID:
+        return
+
+    # Check if the user is the bot owner
+    if OWNER_ID and str(interaction.user.id) != OWNER_ID:
+        await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    # Sort guilds by member count (descending)
+    sorted_guilds = sorted(bot.guilds, key=lambda g: len(g.members), reverse=True)
+
+    # Discord purple color for the embed
+    embed_color = discord.Color.blurple()
+
+    # Pagination setup
+    guilds_per_page = 10
+    total_guilds = len(sorted_guilds)
+    total_pages = (total_guilds + guilds_per_page - 1) // guilds_per_page
+
+    # Create cache for owners
+    owner_cache = {}
+
+    async def get_owner(guild):
+        """Get owner with multiple fallback methods to ensure we get the owner"""
+        if guild.id in owner_cache:
+            return owner_cache[guild.id]
+            
+        try:
+            # First try from guild.owner attribute if available
+            if guild.owner:
+                owner_cache[guild.id] = guild.owner
+                return guild.owner
+                
+            # Try to get the owner from members using owner_id
+            owner_member = guild.get_member(guild.owner_id)
+            if owner_member:
+                owner_cache[guild.id] = owner_member
+                return owner_member
+                
+            # Last resort, try fetch_member for the owner
+            owner = await guild.fetch_member(guild.owner_id)
+            owner_cache[guild.id] = owner
+            return owner
+        except Exception as e:
+            # If all methods fail, create a minimal fake user with just the ID
+            try:
+                # At least get the owner ID if nothing else works
+                owner_id = guild.owner_id
+                return {"id": owner_id, "name": f"Unknown User ({owner_id})"}
+            except:
+                return None
+
+    def make_embed(page: int):
+        embed = discord.Embed(
+            title=f"Server List (Page {page+1}/{total_pages})",
+            description=f"Currently in {total_guilds} servers with {sum(len(g.members) for g in bot.guilds):,} total members.",
+            color=embed_color
+        )
+        
+        start = page * guilds_per_page
+        end = min(start + guilds_per_page, total_guilds)
+        
+        for idx, guild in enumerate(sorted_guilds[start:end], start=start):
+            # Join date in a simple format
+            join_date = guild.me.joined_at.strftime("%Y-%m-%d") if guild.me.joined_at else "Unknown"
+            
+            embed.add_field(
+                name=f"{guild.name} ({guild.id})",
+                value=f"Members: {len(guild.members)}\nJoined: {join_date}\nOwner: Loading...",
+                inline=False
+            )
+        return embed, start, end
+
+    async def update_owners(embed, page_start, page_end):
+        for idx, guild in enumerate(sorted_guilds[page_start:page_end], start=page_start):
+            owner = await get_owner(guild)
+            field_idx = idx - page_start
+            
+            owner_str = "Unknown"
+            if owner:
+                if isinstance(owner, dict):
+                    # This is our minimal fake user with just ID
+                    owner_id = owner["id"]
+                    owner_str = f"ID: {owner_id}"
+                else:
+                    # This is a real discord.Member or discord.User
+                    # Show username and tag if available, plus ID
+                    try:
+                        if hasattr(owner, "name") and owner.name:
+                            if hasattr(owner, "discriminator") and owner.discriminator and owner.discriminator != "0":
+                                owner_str = f"{owner.name}#{owner.discriminator} (ID: {owner.id})"
+                            else:
+                                owner_str = f"{owner.name} (ID: {owner.id})"
+                        else:
+                            owner_str = f"ID: {owner.id}"
+                    except Exception:
+                        # If something goes wrong, at least show the ID
+                        owner_str = f"ID: {owner.id}"
+                
+            # Get the current field value and update only the owner part
+            current_value = embed.fields[field_idx].value
+            new_value = current_value.replace("Owner: Loading...", f"Owner: {owner_str}")
+            embed.set_field_at(
+                field_idx,
+                name=embed.fields[field_idx].name,
+                value=new_value,
+                inline=False
+            )
+            
+        return embed
+
+    # Initial embed
+    initial_embed, start_idx, end_idx = make_embed(0)
+    message = await interaction.followup.send(embed=initial_embed, ephemeral=True)
+    
+    # For single page, just update and return
+    if total_pages == 1:
+        updated_embed = await update_owners(initial_embed, start_idx, end_idx)
+        await message.edit(embed=updated_embed)
+        return
+
+    # For multiple pages, add navigation buttons
+    class PageView(discord.ui.View):
+        def __init__(self):
+            super().__init__(timeout=120)
+            self.page = 0
+            self.message = None
+
+        @discord.ui.button(label="Previous", style=discord.ButtonStyle.primary)
+        async def previous(self, interaction_: discord.Interaction, button: discord.ui.Button):
+            if self.page > 0:
+                self.page -= 1
+                new_embed, start, end = make_embed(self.page)
+                await interaction_.response.edit_message(embed=new_embed, view=self)
+                self.message = await interaction_.original_response()
+                updated_embed = await update_owners(new_embed, start, end)
+                await self.message.edit(embed=updated_embed)
+            else:
+                await interaction_.response.defer()
+
+        @discord.ui.button(label="Next", style=discord.ButtonStyle.primary)
+        async def next(self, interaction_: discord.Interaction, button: discord.ui.Button):
+            if self.page < total_pages - 1:
+                self.page += 1
+                new_embed, start, end = make_embed(self.page)
+                await interaction_.response.edit_message(embed=new_embed, view=self)
+                self.message = await interaction_.original_response()
+                updated_embed = await update_owners(new_embed, start, end)
+                await self.message.edit(embed=updated_embed)
+            else:
+                await interaction_.response.defer()
+
+        @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary)
+        async def refresh(self, interaction_: discord.Interaction, button: discord.ui.Button):
+            new_embed, start, end = make_embed(self.page)
+            await interaction_.response.edit_message(embed=new_embed, view=self)
+            self.message = await interaction_.original_response()
+            updated_embed = await update_owners(new_embed, start, end)
+            await self.message.edit(embed=updated_embed)
+
+    view = PageView()
+    await message.edit(view=view)
+    view.message = message
+    
+    # Update the initial page's owner info
+    updated_embed = await update_owners(initial_embed, start_idx, end_idx)
+    await message.edit(embed=updated_embed)
 
 if __name__ == "__main__":
     bot.start_time = datetime.datetime.now()
