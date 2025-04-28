@@ -320,13 +320,18 @@ async def help_command(interaction: discord.Interaction):
 @bot.tree.command(name="servers", description="List servers the bot is in")
 async def servers_command(interaction: discord.Interaction):
     """Server listing command (Owner only, minimal info with improved owner retrieval)"""
-    # Check if the command is used in the owner's guild
-    if OWNER_GUILD_ID and str(interaction.guild_id) != OWNER_GUILD_ID:
-        return
-
-    # Check if the user is the bot owner
+    # Both checks must be satisfied: 
+    # 1. The command must be used in the owner's guild if OWNER_GUILD_ID is set
+    # 2. The user must be the bot owner if OWNER_ID is set
+    
+    # Always check user first
     if OWNER_ID and str(interaction.user.id) != OWNER_ID:
         await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        return
+        
+    # Then check guild if needed
+    if OWNER_GUILD_ID and str(interaction.guild_id) != OWNER_GUILD_ID:
+        await interaction.response.send_message("This command can only be used in the designated owner guild.", ephemeral=True)
         return
 
     await interaction.response.defer(ephemeral=True)
