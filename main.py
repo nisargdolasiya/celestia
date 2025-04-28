@@ -260,9 +260,15 @@ async def help_command(interaction: discord.Interaction):
 @bot.tree.command(name="servers", description="List servers the bot is in", guild=discord.Object(id=int(GUILD_ID)) if GUILD_ID else None)
 async def servers_command(interaction: discord.Interaction):
     """Server listing command (Owner only, minimal info with improved owner retrieval)"""
+    # Debug info to help identify the user's ID
+    user_id = str(interaction.user.id)
+    print(f"User trying to use /servers: {interaction.user} (ID: {user_id})")
+    print(f"Expected OWNER_ID: '{OWNER_ID}'")
+    print(f"Do they match? {user_id == OWNER_ID}")
+    
     # Double-check permission in case the decorator check fails
     if not OWNER_ID or str(interaction.user.id) != OWNER_ID:
-        await interaction.response.send_message("This command is restricted to the bot owner only.", ephemeral=True)
+        await interaction.response.send_message(f"This command is restricted to the bot owner only. Your ID is {user_id} and the configured owner ID is '{OWNER_ID}'.", ephemeral=True)
         return
         
     # Optional guild restriction if GUILD_ID is set
