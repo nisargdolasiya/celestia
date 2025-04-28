@@ -15,8 +15,8 @@ logger = logging.getLogger('celestia')
 # Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-OWNER_ID = os.getenv('OWNER_ID')
-OWNER_GUILD_ID = os.getenv('GUILD_ID')
+OWNER_ID = os.getenv('OWNER_ID', '')  # Default to empty string if not found
+OWNER_GUILD_ID = os.getenv('GUILD_ID', '')  # Default to empty string if not found
 
 # Bot configuration
 intents = discord.Intents.default()
