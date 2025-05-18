@@ -25,7 +25,8 @@ print(f"GUILD_ID set to: '{GUILD_ID}'")
 # Bot configuration
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix=commands.when_mentioned_or(''), intents=intents, help_command=None)
+# Using a command prefix that won't be triggered accidentally
+bot = commands.Bot(command_prefix=commands.when_mentioned_or(None), intents=intents, help_command=None)
 
 # API configuration
 API_HEADERS = {
@@ -50,6 +51,17 @@ INACTIVE_CHARTS = {
     'wing-kp-12-hour',
     'goes-magnetometer'
 }
+
+@bot.event
+async def on_message(message):
+    # Ignore all message content - only process slash commands
+    # Only process messages that are necessary for the bot to function
+    if message.author.id == bot.user.id:
+        return
+    
+    # Don't process any commands through the prefix system
+    # This ensures only slash commands will work
+    return
 
 @bot.event
 async def on_ready():
